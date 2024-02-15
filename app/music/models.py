@@ -1,9 +1,20 @@
 import datetime
-
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from datetime import datetime
 
+STYLES = (
+        ("Indie", "Indie"),
+        ("Pop", "Pop"),
+        ("Rock", "Rock"),
+        ("Funky", "Funky"),
+        ("Reggaeton", "Reggaeton"),
+        ("Classic", "Classic"),
+        ("Orquestra", "Orquestra"),
+        ("Folk", "Folk")
+    )
 
 def less_than_five(value):
     """Raire an error if the value is 5 or greater."""
@@ -13,7 +24,14 @@ def less_than_five(value):
 
 def get_current_year():
     """Return the current year."""
-    return datetime.datetime.today().year
+    return datetime.today().year
+
+def nine_pm():
+    return datetime.strptime('09:00:00', '%H:%M:%S').time()
+
+
+def fourteen_pm():
+    return datetime.strptime('14:00:00', '%H:%M:%S').time()
 
 
 class ValidatedModel(models.Model):
@@ -95,17 +113,6 @@ class Album(ValidatedModel):
 class Song(ValidatedModel):
     """The Song model."""
 
-    STYLES = (
-        ("Indie", "Indie"),
-        ("Pop", "Pop"),
-        ("Rock", "Rock"),
-        ("Funky", "Funky"),
-        ("Reggaeton", "Reggaeton"),
-        ("Classic", "Classic"),
-        ("Orquestra", "Orquestra"),
-        ("Folk", "Folk")
-    )
-
     audio = models.FileField(upload_to="audio")
     title = models.CharField(max_length=250)
     author = models.ForeignKey(Author, on_delete=models.SET_NULL,
@@ -120,6 +127,15 @@ class Song(ValidatedModel):
     deal_of_the_day = models.BooleanField(default=False)
     created = models.DateTimeField(auto_now_add=True)
     last_modified = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, 
+                                on_delete=models.SET_NULL, 
+                                null=True, blank=True, 
+                                related_name = 'created_by_user')
+    
+    last_modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, 
+                                        on_delete=models.SET_NULL, 
+                                        null=True, blank=True, 
+                                        related_name = 'modified_by_user')
 
     class Meta:
         """Metadata."""
@@ -128,3 +144,89 @@ class Song(ValidatedModel):
             models.UniqueConstraint(fields=["title", "author", "album", "duration"],
                                     name="unique_song")
         ]
+
+class Profile(ValidatedModel):
+    
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
+    daily_start_time = models.TimeField(default=nine_pm)
+    daily_finish_time = models.TimeField(default=fourteen_pm)
+    preferred_style = models.CharField(max_length=20, choices=STYLES)
+    preferred_song = models.ForeignKey(Song, on_delete= models.SET_NULL, null=True, blank=True)
+
+
+
+
+
+
+# Task 2
+
+"""
+1. 
+from django.contrib.auth.models import User
+
+User.objects.all().values('username','profile__preferred_style','profile__preferred_song')
+"""
+
+"""
+2. 
+In [1]: from django.contrib.auth.models import User
+
+In [2]: from music.models import Profile, Song, Album, Musician, Author
+
+In [3]: superadmin_user = User.objects.get(username='superadmin')
+
+In [4]: Song.objects.all().update(created_by=superadmin_user, last_modified_by=superadmin_user)
+Out[4]: 791
+"""
+
+"""
+3.
+
+In [19]: josephine = Profile.objects.get(user__username='josephine')
+
+In [20]: songs = Song.objects.filter(style=josephine.preferred_style)
+
+In [21]: songs
+Out[21]: <QuerySet [<Song: Song object (2)>, <Song: Song object (9)>, <Song: Song object (11)>, <Song: Song object (14)>, <Song: Song object (16)>, <Song: Song object (17)>, <Song: Song object (21)>, <Song: Song object (29)>, <Song: Song object (39)>, <Song: Song object (49)>, <Song: Song object (54)>, <Song: Song object (55)>, <Song: Song object (61)>, <Song: Song object (63)>, <Song: Song object (74)>, <Song: Song object (78)>, <Song: Song object (81)>, <Song: Song object (83)>, <Song: Song object (87)>, <Song: Song object (88)>, '...(remaining elements truncated)...']>
+"""
+
+"""
+4. 
+
+
+In [19]: tambourine_players = Musician.objects.filter(instrument='tambourine')
+
+In [20]: id_lst = []
+
+In [21]: for player in tambourine_players:
+    ...:     id_lst.append(player.author.id)
+    ...: 
+
+In [22]: Song.objects.filter(author_id__in = id_lst).values('created_by__profile__preferred_style').distinct()
+Out[22]: <QuerySet [{'created_by__profile__preferred_style': 'Indie'}, {'created_by__profile__preferred_style': 'Pop'}, {'created_by__profile__preferred_style': 'Rock'}, {'created_by__profile__preferred_style': 'Funky'}]>
+
+"""
+
+"""
+5.
+
+In [68]: between_1910_1919_ukulele = Musician.objects.filter(Q(instrument='ukulele') & Q(author__last_appearance__gte=1910) & Q(author__last_appearance__lte=1919))
+
+In [69]: between_1980_1989_piano = Musician.objects.filter(Q(instrument='piano') & Q(author__first_appearance__gte=1980) & Q(author__first_appearance__lte=1989))
+
+In [70]: ukulele_ids = []
+
+In [71]: piano_ids = []
+
+In [72]: for musician in between_1980_1989_piano:
+    ...:     piano_ids.append(musician.author.id)
+    ...: 
+
+In [73]: for musician in between_1910_1919_ukulele:
+    ...:     ukulele_ids.append(musician.author.id)
+    ...: 
+
+Song.objects.filter(Q(author_id__in= ukulele_ids)|Q(author_id__in = piano_ids)).values('created_by__profile__preferred_song', 'created_by__profile__preferred_song__title').distinct()
+Out[82]: <QuerySet [{'created_by__profile__preferred_song': 2, 'created_by__profile__preferred_song__title': 'Audio number 3'}, {'created_by__profile__preferred_song': 3, 'created_by__profile__preferred_song__title': 'Audio number 4'}, {'created_by__profile__preferred_song': 44, 'created_by__profile__preferred_song__title': 'Audio number 2'}]>
+
+"""
